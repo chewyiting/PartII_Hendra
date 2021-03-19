@@ -1,0 +1,65 @@
+####################################################
+# 	MODELLING HENDRA VIRUS DYNAMICS (SIR)
+# 	WITHIN A HOST POPULATION 
+#   WITH AN ANNUAL, SEASONAL BIRTH PULSE 
+# 	AND A CONSTANT DEATH RATE
+#	-------------------------------------------
+#			   DEFINITIONS
+####################################################
+
+# Yi-Ting Chew, 2021
+
+# Stochastic SIR model with an annual, seasonal birth rate function (developed by Peel et al., 2014)
+# Birth rate function uses parameter estimates from Peel et al., 2014, who fitted the function to a dataset of P. poliocephalus in Gordon, NSW obtained by Peggy Eby
+# Constant death rate is kept equal to annual average birth rate for stable average inter-annual population size (v), such that dN/dt = 0.
+
+# Demographic structure :
+# s = 130 (synchrony parameter, corresponds to 95% of births occurring in 28days)
+# m = 0.14 (per capita death rate, corresponds to an average lifespan of 7.14 years)
+# phi (phase parameter, ranges from -pi/2 to pi/2 to change timing of pathogen introduction relative to birth pulse)
+
+# Infection dynamics:
+# dI/dt = beta*S*I/N - (m + gamma)*I 
+# R0 = <N>/<S> = beta / (m + gamma)
+
+#----------Birth rate function----------
+library(deSolve)
+birthpulse <- function(t,p){
+  phi <- p$phi
+  m <- p$m
+  s <- p$s
+  if(s==0){
+    birth <- m
+  } else {
+    ki <- m/besselI(s/2,0,TRUE) 
+    cos_term <- exp(-s*(cos(-phi+pi*(t/365)))^2)
+    birth <- ki*cos_term
+    }
+  return(birth)
+}
+
+#----------Stochastic SIR model----------
+library(adaptivetau) #Implement Cao et al's adaptive tau-leaping algorithm
+library(compiler)  
+# Transition matrix
+transitions = list(c(S=+1), #birth
+                   c(S=-1), #death.S
+                   c(I=-1), #death.I
+                   c(R=-1), #death.R
+                   c(S=-1,I=+1,X=+1), #infection, transmission events recorded in demivariable X
+                   c(I=-1,R=+1)) #recovery
+
+# Rates of each transition (rateFunc input)
+probabilities <- function(x,p,t){
+  if(x["I"]!=0){ 
+  return(c(
+    (sum(x["S"],x["I"],x["R"]))*(birthpulse(t,p)),            #birth
+    p$m*x["S"],                                               #death.S
+    p$m*x["I"],                                               #death.I
+    p$m*x["R"],                                               #death.R
+    p$b*x["S"]*x["I"]*(1/(1e-10+sum(x["S"],x["I"],x["R"]))),  #infection
+    p$g*x["I"]                                                #recovery
+  ))} else { #If I = 0, halt simulation by making all rates = 0
+    return(c(0,0,0,0,0,0))
+  } 
+}
