@@ -3,8 +3,6 @@
 # 	WITHIN A HOST POPULATION 
 #   WITH AN ANNUAL, SEASONAL BIRTH PULSE 
 # 	AND A CONSTANT DEATH RATE
-#	-------------------------------------------
-#			   DEFINITIONS
 ####################################################
 
 # Yi-Ting Chew, 2021
@@ -40,7 +38,6 @@ birthpulse <- function(t,p){
 
 #----------Stochastic SIR model----------
 library(adaptivetau) #Implement Cao et al's adaptive tau-leaping algorithm
-library(compiler)  
 # Transition matrix
 transitions = list(c(S=+1), #birth
                    c(S=-1), #death.S
