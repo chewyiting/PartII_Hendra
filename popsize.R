@@ -14,7 +14,7 @@
 # - m = 0.14yr-1
 # - v = 50000
 
-source('birthpulse.R')
+source('~/birthpulse.R')
 
 #----------Deterministic Demographic Model----------
 dNdt <-function(t,y,p){
