@@ -1,0 +1,129 @@
+####################################################
+# 	PLOTTIING FUNCTION FOR VISUALISING EXTINCTION TIMES
+#		FROM A SET OF STOCHASTIC SIMULATIONS
+#	------------------------------------------
+#	  EFFECT OF TIMING PATHOGEN INTRODUCTION and RECOVERY RATE ON VIRAL PERSISTENCE
+#	-------------------------------------------
+####################################################
+
+# This is an OVERVIEW of what's happening...
+#   I explore a range of recovery rates (as defined in Peel et al., (2014)) for their effect on viral persistence (controlled by gamma parameter, which has its values stored in g_r vector)
+#   I also look at how recovery interacts with the timing of the initial pathogen introduction (controlled by phase parameter (phi), which has its values stored in phi_r vector)
+#   For each combination of gamma and phi, I run a set of ntrials simulations (default 1000)
+#   Then, I plot a series of stacked bar plots to visualise the distribution of extinction times in ntrials simulations. I have also uploaded an example dataset in ext_data.csv
+
+#==========Constants==========
+ntrials <- 1000 
+set_v <- 50000
+g_r <- seq(1,12,1)/365  # recovery rates (days-1)
+phi_r <- seq(-pi/2,pi/2,length.out = 13)
+
+#[CHUNK1]==========Recording the type and time of extinctions for simulations==========
+output_times <- data.frame(trial=seq(1,ntrials,1),
+                     extTime=0.1,             # Time of extinction (when I = 0)
+                     extSize=0.1,             # Final epidemic size (total number of transmission events)
+                     extCat=0.1,              # Outcome of simulation
+                     row.names=NULL)
+
+#-----Finds time of extinction-----
+ext_time <-function(sim.s){                   # takes a set of ntrials simulations 
+  for(sim in 1:ntrials){
+    I_ind <- sim.s[[sim]][,3]==0              # Vector index for when I = 0
+    t_ext <- sim.s[[sim]][,1][I_ind][1]
+    output_times[sim,2] <- t_ext
+  }
+  return(output_times)
+}
+#-----Finds final epidemic size-----
+ext_size <- function(sim.s){                 
+  fes <- sapply(1:ntrials,function(sim){
+    tail(sim.s[[sim]],1)[5]})                 # Last element of a vector tracking transmission events
+  return(fes)
+}
+
+#-----Finds outcome of simulation-----
+probExt <- function(sim.s){                  
+  output <- ext_time(sim.s)
+  output[3] <- ext_size(sim.s)
+  for(sim in 1:ntrials){
+    sizeThresh <- output[sim,3] >= 5          # TRUE if bigger than 5 cases
+    timeThresh <- output[sim,2] >= 2*365      # TRUE if extinct after 2 years
+    timeThreshNa <- is.na(timeThresh)         # TRUE if I never reaches 0 in a sim
+    if(sizeThresh==FALSE){
+      output[sim,4] <- NaN                    # Failed outbreak (< 5 transmission events)
+      } else if(timeThreshNa==FALSE & timeThresh==FALSE){
+        output[sim,4] <- 0                    # Extinction occurs within 10 years, following successful outbreak
+        } else {
+          output[sim,4] <- 1                  # Persists for at least 10 years 
+        }
+    }
+  return(output)
+}
+
+#-----Returns vector storing ext times for sims which are NOT failed outbreaks-----
+tyPersist <- function(sim.s){ 
+  extCats <- probExt(sim.s)
+  extInd <- is.na(extCats[4])     # Vector index for sims which are failed outbreaks
+  extTimes <- extCats[2][!extInd] # Fetching sims which are NOT failed outbreaks
+  return(extTimes)
+}
+
+#-----Describe extinction times, sizes and categories for all simulations-----
+# Returns nested list (two levels)
+# First dimension has length of nx_g 
+# Second dimension has length of ntrials
+# Function takes SIR_ccs.1 as input, because it has nx_g * ntrials dimensions
+
+EXTsorter <- function(simROW){ 
+  timesEXT <- lapply(1:nx_g,function(g_ind){
+    timeLIST <- (tyPersist(simROW[g_ind,]))/365 # Getting extinction times for simulations not ending in failed outbreaks
+    n.early <- ntrials-length(timeLIST)         # Counting number of simulations ending in failed outbreaks
+    times.e <- rep(0,n.early)                   # Assigning failed outbreaks a dummy value of 0 for time of extinction
+    dummyIND <- is.na(timeLIST)                 # Finding simulations which are failed outbreaks
+    times.late <- timeLIST[!dummyIND]           # Simulations which are NOT failed outbreaks
+    times.verylate <- rep(11,(length(timeLIST)-length(times.late))) # Simulations persisting for > 10 years, such that their times of extinction could not be recorded. dummy value of 11 years is assigned instead.
+    times.all <- c(times.e,times.late,times.verylate) 
+    sorting <- sort(times.all,decreasing=TRUE)
+    })
+  return(timesEXT)
+  }
+  
+#[CHUNK2]==========Running stochastic simulations with SIR_v==========
+source('simulations.R')
+system.time(SIR_ccs.1 <- SIR_v(phi_r,v3_r))                             # Run simulations for all 13 values of phi_r, for a particular value of g
+EXT_list <- EXTsorter(SIR_ccs.1)
+ext.data <- data.frame(extTime=c(EXT_list[[1]],EXT_list[[2]],EXT_list[[3]],
+                                 EXT_list[[4]],EXT_list[[5]],EXT_list[[6]],
+                                 EXT_list[[7]],EXT_list[[8]],EXT_list[[9]],
+                                 EXT_list[[10]],EXT_list[[11]],EXT_list[[12]],
+                                 EXT_list[[13]]),
+                       phi=rep(round(phi_r/pi,digits=2),each=ntrials))
+
+#write.csv(ext.data,'phase1.csv')                                          # Saving dataframe for this particular value of g...
+#phase1.df<-read.csv(file = 'phase1.csv', stringsAsFactors = FALSE)        # Loading up the dataframe for this particular value of g...
+#phase2.df<-read.csv(file = 'phase2.csv', stringsAsFactors = FALSE)        # And repeat, for another value of g, and so on..
+#ext.df <-rbind.data.frame(phase1.df,phase2.df)
+ext.df <- read.csv(file = 'ext_data.csv', stringsAsFactors = FALSE)        # Skipping the steps above, if you're using the dataset I'm providing (ext_data.csv)
+
+ext.df$bins <- cut(ext.df$extTime,breaks=c(NA,c(0,2),seq(3,11,1)))         # Binning extinction times into 1 year intervals
+leglabels <- unique(ext.df$bins)[order(unique(ext.df$bins),decreasing=FALSE,na.last=FALSE)] # Creating labels for extinction times
+
+#[CHUNK3]==========Plotting==========
+q <- ggplot(ext.df, aes(1,ntrials)) +
+      geom_bar( stat = "identity",
+                aes(fill=factor(bins,levels=leglabels,exclude=NULL)),
+                position="fill") +
+      facet_wrap( ~ phi , ncol=length(phi_r),
+                  strip.position = "bottom") +
+  labs(y=TeX("proportion of simulations"),
+       x=expression(phi~(pi))) +
+  theme(axis.text.x= element_blank(),
+        axis.ticks.x=element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        legend.direction = "horizontal",
+        legend.position = "bottom") +
+  guides(fill=guide_legend("time to extinction (yrs)")) 
+  
+  q + scale_fill_ordinal(na.value="grey",labels = c("<2", "2-3", "3-4", "4-5", "5-6","6-7","7-8",">10","outbreak failed")) #Separated from the above, because not all bins have values sometimes. Check q before running this line.
+  
