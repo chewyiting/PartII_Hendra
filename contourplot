@@ -1,0 +1,144 @@
+####################################################
+# 	PLOTTIING FUNCTION FOR ESTIMATING CCS
+#		FROM A SET OF STOCHASTIC SIMULATIONS
+#   WITH VARYING RECOVERY RATES 
+#	------------------------------------------
+#	  EFFECT OF RECOVERY ON CCS (MEASURE OF VIRAL PERSISTENCE)
+#	-------------------------------------------
+####################################################
+
+# This is an OVERVIEW of what's happening...
+#   CCS derivation adopted from Peel et al., (2014)
+#   CCS defined here as the average annual population size (v) in which a pathogen experiences even odds of persistence after 10 years (P(Persist)=0.5)
+#   in [CHUNK1], my functions take a set of simulations, obtained from SIR_v function (from simulations.R)
+#   in [CHUNK2], SIR_v returns a nested list of simulations. First and second levels are lengths of v_r and g_r respectively.
+#   SIR_v can be ran for a subset of combinations of v_r and g_r. This is for flexibility, because you don't necessarily want to commit to 12 * 28 * 1000 simulations immediately. 
+#   in [CHUNK3], I make a contour plot to visualise CCS estimates for each element of g_r. I have also uploaded an example dataset in ccs_data.csv.
+
+#==========Constants==========
+ntrials <- 1000 
+# v3_r is the initial population size, and v_r is its corresponding average annual population sizes
+v3_r <- c(100, 200, 300, 400, 500, 600, 700, 799, 899, 999, 1999, 2998, 3997, 4997, 5996, 6995
+          7994, 8994, 9993, 19986, 29979, 39972, 49965, 59958, 69951, 79944, 89937, 99930)
+v_r <- c(100, 200, 300, 400, 500, 600, 700, 800, 900,
+         1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000,
+         10000, 20000, 30000, 40000, 50000, 60000, 70000, 80000, 90000, 100000)
+g_r <- seq(1,12,1)/365  # recovery rates (days-1)
+nx_g <- length(g_r)  # x variable is the recovery rate  
+ny_v <- length(v_r)  # y variable is the average annual population size
+
+#[CHUNK1]==========Recording the type and time of extinctions for simulations==========
+output_times <- data.frame(trial=seq(1,ntrials,1),
+                     extTime=0.1,             # Time of extinction (when I = 0)
+                     extSize=0.1,             # Final epidemic size (total number of transmission events)
+                     extCat=0.1,              # Outcome of simulation
+                     row.names=NULL)
+
+#-----Finds time of extinction-----
+ext_time <-function(sim.s){                   # takes a set of ntrials simulations 
+  for(sim in 1:ntrials){
+    I_ind <- sim.s[[sim]][,3]==0              # Vector index for when I = 0
+    t_ext <- sim.s[[sim]][,1][I_ind][1]
+    output_times[sim,2] <- t_ext
+  }
+  return(output_times)
+}
+#-----Finds final epidemic size-----
+ext_size <- function(sim.s){                 
+  fes <- sapply(1:ntrials,function(sim){
+    tail(sim.s[[sim]],1)[5]})                 # Last element of a vector tracking transmission events
+  return(fes)
+}
+
+#-----Finds outcome of simulation-----
+probExt <- function(sim.s){                  
+  output <- ext_time(sim.s)
+  output[3] <- ext_size(sim.s)
+  for(sim in 1:ntrials){
+    sizeThresh <- output[sim,3] >= 5          # TRUE if bigger than 5 cases
+    timeThresh <- output[sim,2] >= 2*365      # TRUE if extinct after 2 years
+    timeThreshNa <- is.na(timeThresh)         # TRUE if I never reaches 0 in a sim
+    if(sizeThresh==FALSE){
+      output[sim,4] <- NaN                    # Failed outbreak (< 5 transmission events)
+      } else if(timeThreshNa==FALSE & timeThresh==FALSE){
+        output[sim,4] <- 0                    # Extinction occurs within 10 years, following successful outbreak
+        } else {
+          output[sim,4] <- 1                  # Persists for at least 10 years 
+        }
+    }
+  return(output)
+}
+
+#-----Returns vector storing ext times for sims which are NOT failed outbreaks-----
+tyPersist <- function(sim.s){ 
+  extCats <- probExt(sim.s)
+  extInd <- is.na(extCats[4])     # Vector index for sims which are failed outbreaks
+  extTimes <- extCats[2][!extInd] # Fetching sims which are NOT failed outbreaks
+  return(extTimes)
+}
+
+#-----Describe extinction times, sizes and categories for all simulations-----
+# Returns nested list (two levels)
+# First dimension has length of nx_g 
+# Second dimension has length of ntrials
+# Function takes SIR_ccs.1 as input, because it has nx_g * ntrials dimensions
+
+EXTsorter <- function(simROW){ 
+  timesEXT <- lapply(1:nx_g,function(g_ind){
+    timeLIST <- (tyPersist(simROW[g_ind,]))/365 # Getting extinction times for simulations not ending in failed outbreaks
+    n.early <- ntrials-length(timeLIST)         # Counting number of simulations ending in failed outbreaks
+    times.e <- rep(0,n.early)                   # Assigning failed outbreaks a dummy value of 0 for time of extinction
+    dummyIND <- is.na(timeLIST)                 # Finding simulations which are failed outbreaks
+    times.late <- timeLIST[!dummyIND]           # Simulations which are NOT failed outbreaks
+    times.verylate <- rep(11,(length(timeLIST)-length(times.late))) # Simulations persisting for > 10 years, such that their times of extinction could not be recorded. dummy value of 11 years is assigned instead.
+    times.all <- c(times.e,times.late,times.verylate) 
+    sorting <- sort(times.all,decreasing=TRUE)
+    })
+  return(timesEXT)
+  }
+
+#-----Calculating P(Persistence)-----
+# Returns vector of P(Persistence), calculated for each element of nx_g
+# Function takes SIR_ccs.1 as input, which should have nx_g * ntrials dimensions
+
+probPersist <-function(simROW,n.v_r){
+  pers_v <- vector("list",length(n.v_r))
+  for(v in 1:length(n.v_r))){
+    pers_v[[v]] <- sapply(1:length(g_r),function(g){
+      print((g_r[g])*365)                 # Progress checker, prints recovery rate (yr-1)
+      extFinder <-probExt(simROW[v,g,])   # Outcomes of simulations, NaN for failed outbreaks, 0 for extinctions within 10 years, 1 for persisting past 10 years (I never reaches 0)
+      extSet <- na.omit(extFinder[4])     # Omitting failed outbreaks from denominator 
+      extProb <- 1-(sum(extSet[,1])/length(extSet[,1])) # For a combination of g and v, calculate proportion of simulations which persisted past 10 years
+      return(extProb)
+    })
+  }
+  return(pers_v)
+}
+
+
+#[CHUNK2]==========Running stochastic simulations with SIR_v==========
+source('simulations.R')
+system.time(SIR_ccs.1 <- SIR_v(v3_r[1:3],g_r,ntrials))                # Calculating P(Persistence) for first three values of v_r, initialise simulations with v3_r.
+CCS_list.1 <- probPersist(SIR_ccs.1,v3_r[1:3])         
+ccs.df <-   data.frame(persProb=c(SIR_ccs.1[[1]],SIR_ccs.1[[2]],SIR_ccs.1[[3]],
+                       g=rep(g_r*365,ny_v),
+                       v=rep(v_r,each=nx_g))  
+write.csv(ccs.df,'ccs_data.csv')                                      # Storing dataframe for first three values of v_r..
+ccs.data1 <- read.csv(file = 'ccs_data.csv', stringsAsFactors = FALSE) # Loading said dataframe. 
+
+#[CHUNK3]==========Plotting ==========
+# ccs.data <- rbind.data.frame(ccs.data1,ccs.data2) # optional step, if you have additional dataframes for other values of v_r
+ccs.data <- read.csv(file = 'ccs_data.csv', stringsAsFactors = FALSE) # or if you're using the dataset I'm providing, ccs_data.csv
+
+z <- ggplot(ccs.data, aes(g,v,z=persProb))+
+  scale_y_continuous(trans='log10')+
+  annotation_logticks(sides="l") +
+  labs(x=TeX("recovery rate ($\\gamma$)"),
+       y=TeX("average population size ($v$)")) +
+  geom_contour_fill(aes(fill = stat(level))) +
+  guides(fill=guide_legend("P(extinction)")) +
+  geom_contour(aes(z=persProb,
+                     colour=factor(..level..==0.5)),
+                 show.legend = FALSE)+
+  scale_colour_manual(values=c(NA,"red"))
+z + geom_text_contour(stroke=0.2,stroke.colour="white") # Not separating this step somehow makes the graph colours all wrong
