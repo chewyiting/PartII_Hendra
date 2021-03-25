@@ -1,5 +1,5 @@
 # PartII_Hendra
-Written for my part II project: "Modelling Hendra virus circulation in eastern Australian flying-foxes", March 2021
+Written for my NST Part II Pathology Research Project Report: "Modelling Hendra virus circulation in eastern Australian flying-foxes" (March 2021).
 
 SIR model for Hendra virus circulation in eastern Australian flying-fox species (_P. alecto, P. poliocephalus_), with an annual seasonal birth rate, constant death rate, and frequency-dependent transmission.
 
